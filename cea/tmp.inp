@@ -1,0 +1,7 @@
+prob
+	case=Pc_07.00__of_99.90.inp o/f=99.9 rocket frozen nfz=2 tcest,k=3800 p,bar=70.0 sup,ae/at=1.0
+react
+	oxid=O2 wt=100 t,k=280.0
+	fuel=CurableResin wt=100 t,k=280.0 h,kj/mol=-296.9636 C 16.0873 H 20.6143 O 3.9681  
+output	transport
+end
