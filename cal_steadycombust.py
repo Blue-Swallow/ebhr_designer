@@ -5,6 +5,12 @@ Created on Sat Aug  4 07:22:22 2018
 @author: TJ
 """
 
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from scipy import optimize
+from cea_post import Read_datset
+
 class Gen_excond_table:
     def __init__(self, d, N, Df, eta, rho_f, Rm, Tox, C1, C2, cea_path):
         self.a = 1 - N*np.power(d, 2)/np.power(Df, 2)
