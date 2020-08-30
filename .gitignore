@@ -1,3 +1,10 @@
+# Original
+/*
+cea/tmp.out
+cea/tmp.inp
+!cea
+!cea_db/sample
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
