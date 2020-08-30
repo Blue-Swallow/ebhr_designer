@@ -7,64 +7,180 @@ Created on Sat Aug  4 07:22:22 2018
 
 import numpy as np
 import pandas as pd
+import os
+import json
+from datetime import datetime
 from tqdm import tqdm
 from scipy import optimize
 from cea_post import Read_datset
 
-class Gen_excond_table:
-    def __init__(self, d, N, Df, eta, rho_f, Rm, Tox, C1, C2, cea_path):
-        self.a = 1 - N*np.power(d, 2)/np.power(Df, 2)
-        self.Df = Df*1.0e-3
-        self.eta = eta
-        self.rho_f = rho_f
-        self.Rm = Rm
-        self.Tox = Tox
-        self.C1 = C1
-        self.C2 = C2
-        self.cea_path = cea_path
-        self.mox_range, self.Dt_range = self._input_range_() #generate the calculation range of mox[g/s] and Dt [mm]
+class Cal_excond:
+    def __init__(self, cond, const, **kwargs):
+        self.cond = cond
+        self.model_const = const
+        self.d = self.cond["d"]
+        self.N = self.cond["N"]
+        self.Df = cond["Df"]
+        self.eta = cond["eta"]
+        self.rho_f = cond["rho_f"]
+        self.Rm = cond["Rm"]
+        self.mu = cond["mu"]
+        self.Tox = cond["Tox"]
+        self.cea_path = cond["cea_path"]
+        self.a = 1 - self.N*np.power(self.d, 2)/np.power(self.Df, 2)
+        if self.model_const["mode"] is "C1C2":
+            self.C1 = self.model_const["C1"]
+            self.C2 = self.model_const["C2"]
+            self.n = self.model_const["n"]
+        elif self.model_const["mode"] is "EXP":
+            self.m = self.model_const["m"]
+            self.beta = self.model_const["beta"]
+            self.n = self.model_const["n"]
+        elif self.model_const["mode"] is "PROP":
+            self.alpha = self.model_const["alpha"]
+            self.n = self.model_const["n"]
+        else:
+            print("This program does't have such a mode: \"{}\".".format(self.model_const["mode"]))
+            print("Please assign a mode from the following: \"C1C2\", \"EXP\" or \"PROP\". ")
+
+    def _iterat_func_Pc_(self, Pc, mox, Dt):
+        Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
+        if self.model_const["mode"] is "C1C2":
+            Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=self.n)
+        elif self.model_const["mode"] is "EXP":
+            # Vf = func_Vf_exp(Vox, Pc, self.beta, self.m, n=self.n)
+            pass
+        else:
+            # Vf = func_Vf_prop(Vox, Pc, self.alpha, n=self.n)
+            pass
+        of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
+        func_cstr = gen_func_cstr(self.cea_path)
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
+        diff = Pc_cal - Pc
+        error = diff/Pc_cal
+        return(error)
+
+    def get_excond(self, mox, Dt, Pc_init=1.0e+6):
+        func_cstr = gen_func_cstr(self.cea_path)
+        try:
+            Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=10, tol=1.0e-3, args=(mox, Dt))
+        except RuntimeError:
+            try:
+                Pc = optimize.brentq(self._iterat_func_Pc_, 0.01e+6, 50e+6, maxiter=100, xtol=1.0e-3, args=(mox, Dt), full_output=False)
+            except (RuntimeError, ValueError, RuntimeWarning):
+                Pc = np.nan
+
+        Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
+        if self.model_const["mode"] is "C1C2":
+            Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=self.n)
+        elif self.model_const["mode"] is "EXP":
+            # Vf = func_Vf_exp(Vox, Pc, self.beta, self.m, n=self.n)
+            pass
+        else:
+            # Vf = func_Vf_prop(Vox, Pc, self.alpha, n=self.n)
+            pass
+        of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
+        cstr = self.eta* func_cstr(of, Pc)
+        Re = func_Re(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
+        ustr_lam = func_ustr_lam(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
+        ustr_turb = func_ustr_turb(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
+        dic_excond = {"mox": mox,
+                      "Dt": Dt,
+                      "Pc": Pc,
+                      "Vox": Vox,
+                      "Vf": Vf,
+                      "of": of,
+                      "cstr_ex": cstr,
+                      "Re": Re,
+                      "ustr_lam": ustr_lam,
+                      "ustr_turb": ustr_turb
+                      }
+        return dic_excond
+    
+
+
+
+class Gen_excond_table(Cal_excond):
+    def __init__(self, cond, const, mox_range=None, Dt_range=None, **kwargs):
+        super().__init__(cond, const)
+        self.mox_range = mox_range
+        self.Dt_range = Dt_range
 #        self.table = self.gen_table()
 
     def _input_range_(self):
         print("\n\nInput the range of mox [g/s], oxidizer mass flow rate, where you want to generate the table." )
         print("\ne.g. If the range is 10.0 to 20.0 g/s and the interval is 1.0 g/s\n10.0 20.0 1.0")
         tmp = list(map(lambda x: float(x) ,input().split()))
-        mox_range = np.arange(tmp[0], tmp[1], tmp[2])*1.0e-3 # generate range and convert [g/s] to [kg/s]
+        mox_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e-3 # generate range and convert [g/s] to [kg/s]
 
         print("\n\nInput the range of Dt [mm], nozzle throat diameter, where you want to generate the table." )
         print("\ne.g. If the range is 5.0 to 10.0 mm and the interval is 1.0 mm\n5.0 10.0 1.0")
         tmp = list(map(lambda x: float(x) ,input().split()))
-        Dt_range = np.arange(tmp[0], tmp[1], tmp[2])*1.0e-3 # generate range and convert [mm] to [m]
+        Dt_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e-3 # generate range and convert [mm] to [m]
         return(mox_range, Dt_range)
 
     def gen_table(self):
-        df = pd.DataFrame({}, index=self.mox_range)
+        if self.mox_range is None or self.Dt_range is None:
+            self.mox_range , self.Dt_range = self._input_range_()
+        df_base = pd.DataFrame({}, index=self.mox_range)
+        df_pc = df_base.copy(deep=True)
+        df_vox = df_base.copy(deep=True)
+        df_vf = df_base.copy(deep=True)
+        df_of = df_base.copy(deep=True)
+        df_cstr = df_base.copy(deep=True)
+        df_re = df_base.copy(deep=True)
+        df_ulam = df_base.copy(deep=True)
+        df_uturb = df_base.copy(deep=True)
         for Dt in tqdm(self.Dt_range, desc="Dt loop", leave=True):
             Pc = np.array([])
+            Vox = np.array([])
+            Vf = np.array([])
+            of = np.array([])
+            cstr_ex = np.array([])
+            Re = np.array([])
+            ustr_lam = np.array([])
+            ustr_turb = np.array([])
             for mox in tqdm(self.mox_range, desc="mox loop", leave=False):
-                tmp = self.converge_Pc(mox, Dt, Pc_init=1.0e+6)
-                Pc = np.append(Pc, tmp)
-            df[Dt] = Pc # insert calculated Pc to data frame, df.
-        return(df)
-        
+                tmp = self.get_excond(mox, Dt, Pc_init=0.5e+6)
+                Pc = np.append(Pc, tmp["Pc"])
+                Vox = np.append(Vox, tmp["Vox"])
+                Vf = np.append(Vf, tmp["Vf"])
+                of = np.append(of, tmp["of"])
+                cstr_ex = np.append(cstr_ex, tmp["cstr_ex"])
+                Re = np.append(Re, tmp["Re"])
+                ustr_lam = np.append(ustr_lam, tmp["ustr_lam"])
+                ustr_turb = np.append(ustr_turb, tmp["ustr_turb"])
+            df_pc[Dt] = Pc # insert calculated Pc to data frame, df.
+            df_vox[Dt] = Vox # insert calculated Vox to data frame, df.
+            df_vf[Dt] = Vf # insert calculated Vf to data frame, df.
+            df_of[Dt] = of # insert calculated of to data frame, df.
+            df_cstr[Dt] = cstr_ex # insert calculated cstr_ex to data frame, df.
+            df_re[Dt] = Re # insert calculated Re to data frame, df.
+            df_ulam[Dt] = ustr_lam # insert calculated ustr_lam to data frame, df.
+            df_uturb[Dt] = ustr_turb # insert calculated ustr_turb to data frame, df.
+        self.excond_table = {"Pc": df_pc,
+                        "Vox": df_vox,
+                        "Vf": df_vf,
+                        "of": df_of,
+                        "cstr_ex": df_cstr,
+                        "Re": df_re,
+                        "ustr_lam": df_ulam,
+                        "ustr_turb": df_uturb
+                        }
+        return self.excond_table
 
-    def converge_Pc(self, mox, Dt, Pc_init=1.0e+6):
+    def output(self, fldname=None):
+        if fldname is None:
+            fldname = datetime.now().strftime("%Y_%m%d_%H%M%S")   # folder name which contain animation and figure of calculation result
+        os.mkdir(fldname)
+        dic_json = {"CALCOND": self.cond,
+                    "MODELCONST": self.model_const
+                    }
+        with open(os.path.join(fldname, "cond.json"), "w") as f:
+            json.dump(dic_json, f, ensure_ascii=False, indent=4)
+        for param, table in self.excond_table.items():
+            table.to_csv(os.path.join(fldname, param+".csv"), na_rep="NaN")
 
-        try:
-            Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=10, tol=1.0e-3, args=(mox, Dt))
-        except:
-            Pc = optimize.brentq(self._iterat_func_Pc_, 1.0e+4, 10e+6, maxiter=50, xtol=1.0e-3, args=(mox, Dt), full_output=False)
-        return(Pc)
-    
-    def _iterat_func_Pc_(self, Pc, mox, Dt):
-        Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
-        Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=1.0)
-        of = func_of(Vox, Vf, self.rho_f, self.Df, self.a)
-        func_cstr = gen_func_cstr(self.cea_path)
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
-        diff = Pc_cal - Pc
-        error = diff/Pc_cal
-        return(error)
 
 def func_Vox(Pc, mox, Rm, Tox, Df, a):
     Af = np.pi*np.power(Df, 2)/4
@@ -75,45 +191,73 @@ def func_Vf(Vox, Pc, C1, C2, n=1.0):
     Vf = (C1/Vox + C2)*np.power(Pc, n) #[m/s]
     return(Vf)
     
-def func_of(Vox, Vf, rho_f, Df, a):
-    Af = np.pi*np.power(Df, 2)/4
-    of = Vox/(rho_f*Af*a*Vf)
+def func_of(Vox, Vf, rho_f, a, Pc, Rm, Tox):
+    rho_ox = Pc/(Rm*Tox)
+    of = (Vox*rho_ox*(1-a))/(rho_f*a*Vf)
     return(of)
+
+def func_Re(P, u, T, Rm, d, mu):
+    rho = P/(Rm*T)
+    Re = rho*u*d/mu
+    return Re
+
+def func_ustr_lam(P, u, T, Rm, d, mu):
+    rho = P/(Rm*T)
+    grad = 4*u/d
+    tau = mu*grad
+    ustr = np.sqrt(tau/rho)
+    return ustr
+
+def func_ustr_turb(P, u, T, Rm, d, mu):
+    rho = P/(Rm*T)
+    nu = mu/rho
+    lmbd = 0.3164*np.power(u*d/nu, -1/4)
+    tau = lmbd*rho*np.power(u, 2)/8
+    ustr = np.sqrt(tau/rho)
+    return ustr
 
 def gen_func_cstr(cea_path):
     func = Read_datset(cea_path).gen_func("CSTAR")
     return(func)
 
 def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
-    cstr = func_cstr(of,Pc*1.0e-6)[0]
+    cstr = func_cstr(of,Pc)
     At = np.pi*np.power(Dt, 2)/4
     Pc_cal = eta*cstr*mox*(1 + 1/of)/At
     return(Pc_cal)
    
 
 if __name__ == "__main__":
-#    cea_path = Cui_input().cea_path
-    d = 0.3 #[mm]
-    N = 433 #[個]
-    Df = 38 #[mm]
-    eta = 0.9 #[-]
-    rho_f = 1191 #[kg/m^3]
-    Rm = 259.8 #[J/kg/K]
-    Tox = 280 #[K]
-    C1 = 9.34e-8 # SI-unit
-    C2 = 2.46e-9 # SI-unit  
-    instance = Gen_excond_table(d, N, Df, eta, rho_f, Rm, Tox, C1, C2, cea_path)
-    
-    table = instance.gen_table()
-    table.index = np.round(table.index*1.0e+3, 3) # convert the unit of mox to [g/s]
-    table = table*1.0e-6 #convert the unit of Pc to [MPa]
-    table.columns = np.round(table.columns*1.0e+3, 3) #convert the unit of Dt to [mm]
-    
-# =============================================================================
-#     import matplotlib.pylab as plt
-#     mox = 10.0e-3 #[kg/s]
-#     Dt = 7.0e-3 #[mm]
-#     Pc_range = np.arange(0.2, 1.0, 0.1)*1.0e+6
-#     error = [instance._iterat_func_Pc_(x, mox, Dt) for x in Pc_range]
-#     plt.plot(Pc_range*1.0e-6, error)
-# =============================================================================
+    CALCOND = {"d": 0.3e-3,      # [m] port diameter
+               "N": 433,        # [-] the number of port
+               "Df": 38e-3,     # [m] fuel outer diameter
+               "eta": 0.86,      # [-] efficiency of characteristic exhaust velocity
+               "rho_f": 1191,   # [kg/m3] density of fuel
+               "Rm": 259.8,     # [J/kg/K] gas constant
+               "Tox": 280,      # [K] oxidizer tempereture
+               "mu": 19.53e-6,  # [Pa-s] oxidizer dynamic viscosity
+               "cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database")   # relative folder path to CEA .csv data-base
+               }
+    CONST_VF = {"mode": "C1C2",     # mode selectioin.
+                                    # "C1C2" mode uses the following experimental formula: Vf = (C1/Vox+C2)P^n, 
+                                    # "EXP" mode uses the following experimental formula: Vf = beta*P^n*Vox^m,
+                                    # "PROP" mode uses the following experimental formula: Vf = alpha*P^n
+                "n": 1.0,           # pressure exponent
+                "C1": 9.34e-8,      # SI-unit, optional. experimental constant
+                "C2": 2.46e-9,      # SI-unit, optional. experimental constant
+                "beta": None,       # SI-unit, optional. experimental constant
+                "m": None,          # [-] optional. exponent of oxidizer port velocity
+                "alpha": None       # SI-unit, optional. experimental constant
+                }
+
+    inst = Cal_excond(CALCOND, CONST_VF)
+    out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
+    print(out)
+
+    # MOX_RANGE = np.arange(10e-3, 15.5e-3, 1e-3)
+    # DT_RANGE = np.arange(6e-3, 8.0e-3, 0.5e-3)
+    # inst = Gen_excond_table(CALCOND, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
+    inst = Gen_excond_table(CALCOND, CONST_VF)
+    out = inst.gen_table()
+    inst.output()
+    print("Suceeded!")
