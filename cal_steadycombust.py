@@ -15,7 +15,65 @@ from scipy import optimize
 from cea_post import Read_datset
 
 class Cal_excond:
+    """ Class for calculate combustion parameter to determin experimental condition
+    
+    Attributes
+    -------
+    cond: dictionary of float and string
+        Dictionary of experimental and calculating condition
+        "d": float, [m] port diamter
+        "N": int, [-] the number of port
+        "Df": float, [m] outer diameter of fuel cylinder
+        "eta": float, [-] efficiency of characteristics exhaust velocity
+        "rho_f": float, [kg/m3] fuel density
+        "Rm": float, [J/kg/K] gas constant
+        "Tox": float, [K] oxidizer gas temperature
+        "mu": float, [Pa-s] oxidizer dynamic viscocity
+        "a": float, [-] fuel filling rate
+        "cea_path": string, folder path of CEA csv data-base 
+    model_const: dictionary of float and string
+        Dictionary of model constants which are used in Vf experimental formula
+        "mode": string, mode selection. 
+                "C1C2" mode uses the following experimental formula: Vf = (C1/Vox+C2)P^n, 
+                "EXP" mode uses the following experimental formula: Vf = beta*P^n*Vox^m,
+                "PROP" mode uses the following experimental formula: Vf = alpha*P^n
+        "n": float, pressure exponent
+        "C1": float, optional, SI-unit experimental constant
+        "C2": float, optional, SI-unit experimental constant
+        "beta": float, optional, SI-unit experimental constant
+        "m": float, optional, exponent of oxidizer port velocity
+        "alpha": float, optional, SI-unit experimental constant
+    """
     def __init__(self, cond, const, **kwargs):
+        """constructer
+
+        Parameter
+        -------------
+        cond: dictionary of float and string
+            Dictionary of experimental and calculating condition
+            "d": float, [m] port diamter
+            "N": int, [-] the number of port
+            "Df": float, [m] outer diameter of fuel cylinder
+            "eta": float, [-] efficiency of characteristics exhaust velocity
+            "rho_f": float, [kg/m3] fuel density
+            "Rm": float, [J/kg/K] gas constant
+            "Tox": float, [K] oxidizer gas temperature
+            "mu": float, [Pa-s] oxidizer dynamic viscocity
+            "a": float, [-] fuel filling rate
+            "cea_path": string, folder path of CEA csv data-base 
+        model_const: dictionary of float and string
+            Dictionary of model constants which are used in Vf experimental formula
+            "mode": string, mode selection. 
+                    "C1C2" mode uses the following experimental formula: Vf = (C1/Vox+C2)P^n, 
+                    "EXP" mode uses the following experimental formula: Vf = beta*P^n*Vox^m,
+                    "PROP" mode uses the following experimental formula: Vf = alpha*P^n
+            "n": float, pressure exponent
+            "C1": float, optional, SI-unit experimental constant
+            "C2": float, optional, SI-unit experimental constant
+            "beta": float, optional, SI-unit experimental constant
+            "m": float, optional, exponent of oxidizer port velocity
+            "alpha": float, optional, SI-unit experimental constant
+        """
         self.cond = cond
         self.model_const = const
         self.d = self.cond["d"]
@@ -44,6 +102,22 @@ class Cal_excond:
             print("Please assign a mode from the following: \"C1C2\", \"EXP\" or \"PROP\". ")
 
     def _iterat_func_Pc_(self, Pc, mox, Dt):
+        """ function which output error of Pc for Pc iteration
+        
+        Parameters
+        ----------
+        Pc : float
+            [Pa] chamber pressure
+        mox : float
+            [kg/s] oxidzer mass flow rate
+        Dt : float
+            [mm] nozzle throat diameter
+
+        Return
+        ----------
+        error: float
+            relative error of cmaber pressure between assumed and calculated value
+        """
         Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
         if self.model_const["mode"] is "C1C2":
             Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=self.n)
@@ -58,9 +132,35 @@ class Cal_excond:
         Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
         error = diff/Pc_cal
-        return(error)
+        return error
 
     def get_excond(self, mox, Dt, Pc_init=1.0e+6):
+        """function for calculate combustion parameter from assigned experimental condition
+        
+        Parameters
+        ----------
+        mox : float
+            [kg/s] oxidizer port velocity
+        Dt : float
+            [m] nozzle throat diameter
+        Pc_init : float, optional
+            [Pa] initial guess of chamber pressure, by default 1.0e+6
+        
+        Returns
+        -------
+        dic_excond: dictionary of float
+            dictionary of calculated combustion parameter
+            "mox": float, [kg/s] oxidizer mass flow rate. This is assingned value
+            "Dt": float, [m] nozzle throat diameter. This parameter is assigned value
+            "Pc": float, [Pa] chamber pressure
+            "Vox": float, [m/s] oxidzer port velocity
+            "Vf": float, [m/s] axial fuel regression rate
+            "of": float, [-] oxidizer to fuel mass ratio
+            "cstr_ex": float, [m/s] experimental characteristic exhaust velocity
+            "Re": float, [-] Reynoldz number of oxidizer at each port
+            "ustr_lam": float, [m/s] friction velocity when the flow is laminar
+            "ustr_turb": float, [m/s] friction velocity when the flow is turbulence
+        """
         func_cstr = gen_func_cstr(self.cea_path)
         try:
             Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=10, tol=1.0e-3, args=(mox, Dt))
@@ -105,9 +205,17 @@ class Gen_excond_table(Cal_excond):
         super().__init__(cond, const)
         self.mox_range = mox_range
         self.Dt_range = Dt_range
-#        self.table = self.gen_table()
 
     def _input_range_(self):
+        """ function to input the range of oxidizer mass flow rate and nozzle throat diameter
+        
+        Returns
+        -------
+        mox_range: 1d-ndarray of float
+            [kg/s] the range of oxidizer mass flow rate
+        Dt_range: 1d-ndarray of float
+            [m] the range of nozzle throat diameter
+        """
         print("\n\nInput the range of mox [g/s], oxidizer mass flow rate, where you want to generate the table." )
         print("\ne.g. If the range is 10.0 to 20.0 g/s and the interval is 1.0 g/s\n10.0 20.0 1.0")
         tmp = list(map(lambda x: float(x) ,input().split()))
@@ -117,9 +225,26 @@ class Gen_excond_table(Cal_excond):
         print("\ne.g. If the range is 5.0 to 10.0 mm and the interval is 1.0 mm\n5.0 10.0 1.0")
         tmp = list(map(lambda x: float(x) ,input().split()))
         Dt_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e-3 # generate range and convert [mm] to [m]
-        return(mox_range, Dt_range)
+        return mox_range, Dt_range
 
     def gen_table(self):
+        """ function to generate combustion parameter
+        
+        Returns
+        -------
+        dic_excond: dictionary of pandas.DataFrame
+            dictionary of calculated combustion parameter data table
+            "mox": pandas.DataFrame, [kg/s] oxidizer mass flow rate. This is assingned value
+            "Dt": pandas.DataFrame, [m] nozzle throat diameter. This parameter is assigned value
+            "Pc": pandas.DataFrame, [Pa] chamber pressure
+            "Vox": pandas.DataFrame, [m/s] oxidzer port velocity
+            "Vf": pandas.DataFrame, [m/s] axial fuel regression rate
+            "of": pandas.DataFrame, [-] oxidizer to fuel mass ratio
+            "cstr_ex": pandas.DataFrame, [m/s] experimental characteristic exhaust velocity
+            "Re": pandas.DataFrame, [-] Reynoldz number of oxidizer at each port
+            "ustr_lam": pandas.DataFrame, [m/s] friction velocity when the flow is laminar
+            "ustr_turb": pandas.DataFrame, [m/s] friction velocity when the flow is turbulence
+        """
         if self.mox_range is None or self.Dt_range is None:
             self.mox_range , self.Dt_range = self._input_range_()
         df_base = pd.DataFrame({}, index=self.mox_range)
@@ -170,6 +295,13 @@ class Gen_excond_table(Cal_excond):
         return self.excond_table
 
     def output(self, fldname=None):
+        """ function to output the calculation result to csv file
+        
+        Parameters
+        ----------
+        fldname : string, optional
+            folder name which contains calculated result as csv file, by default None
+        """
         if fldname is None:
             fldname = datetime.now().strftime("%Y_%m%d_%H%M%S")   # folder name which contain animation and figure of calculation result
         os.mkdir(fldname)
