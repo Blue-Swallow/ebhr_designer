@@ -164,7 +164,7 @@ class Cal_excond:
         func_cstr = gen_func_cstr(self.cea_path)
         try:
             Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=10, tol=1.0e-3, args=(mox, Dt))
-        except RuntimeError:
+        except (RuntimeError, RuntimeWarning):
             try:
                 Pc = optimize.brentq(self._iterat_func_Pc_, 0.01e+6, 50e+6, maxiter=100, xtol=1.0e-3, args=(mox, Dt), full_output=False)
             except (RuntimeError, ValueError, RuntimeWarning):
@@ -360,14 +360,14 @@ def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
    
 
 if __name__ == "__main__":
-    CALCOND = {"d": 0.3e-3,      # [m] port diameter
+    CALCOND = {"d": 0.272e-3,      # [m] port diameter
                "N": 433,        # [-] the number of port
                "Df": 38e-3,     # [m] fuel outer diameter
-               "eta": 0.86,      # [-] efficiency of characteristic exhaust velocity
+               "eta": 0.858,      # [-] efficiency of characteristic exhaust velocity
                "rho_f": 1191,   # [kg/m3] density of fuel
                "Rm": 259.8,     # [J/kg/K] gas constant
-               "Tox": 280,      # [K] oxidizer tempereture
-               "mu": 19.53e-6,  # [Pa-s] oxidizer dynamic viscosity
+               "Tox": 300,      # [K] oxidizer tempereture
+               "mu": 20.3e-6,  # [Pa-s] oxidizer dynamic viscosity
                "cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database")   # relative folder path to CEA .csv data-base
                }
     CONST_VF = {"mode": "C1C2",     # mode selectioin.
@@ -376,20 +376,22 @@ if __name__ == "__main__":
                                     # "PROP" mode uses the following experimental formula: Vf = alpha*P^n
                 "n": 1.0,           # pressure exponent
                 "C1": 9.34e-8,      # SI-unit, optional. experimental constant
+                # "C1": 13.9e-8,      # SI-unit, optional. experimental constant
                 "C2": 2.46e-9,      # SI-unit, optional. experimental constant
+                # "C2": 1.61e-9,      # SI-unit, optional. experimental constant
                 "beta": None,       # SI-unit, optional. experimental constant
                 "m": None,          # [-] optional. exponent of oxidizer port velocity
                 "alpha": None       # SI-unit, optional. experimental constant
                 }
 
-    inst = Cal_excond(CALCOND, CONST_VF)
-    out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
-    print(out)
+    # inst = Cal_excond(CALCOND, CONST_VF)
+    # out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
+    # print(out)
 
-    # MOX_RANGE = np.arange(10e-3, 15.5e-3, 1e-3)
-    # DT_RANGE = np.arange(6e-3, 8.0e-3, 0.5e-3)
-    # inst = Gen_excond_table(CALCOND, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
-    inst = Gen_excond_table(CALCOND, CONST_VF)
+    MOX_RANGE = np.arange(2.0e-3, 8.1e-3, 0.1e-3)
+    DT_RANGE = np.arange(5.5e-3, 6.6e-3, 0.1e-3)
+    inst = Gen_excond_table(CALCOND, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
+    # inst = Gen_excond_table(CALCOND, CONST_VF)
     out = inst.gen_table()
     inst.output()
     print("Suceeded!")
