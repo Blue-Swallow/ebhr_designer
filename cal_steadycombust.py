@@ -86,15 +86,15 @@ class Cal_excond:
         self.Tox = cond["Tox"]
         self.cea_path = cond["cea_path"]
         self.a = 1 - self.N*np.power(self.d, 2)/np.power(self.Df, 2)
-        if self.model_const["mode"] is "C1C2":
+        if self.model_const["mode"] == "C1C2":
             self.C1 = self.model_const["C1"]
             self.C2 = self.model_const["C2"]
             self.n = self.model_const["n"]
-        elif self.model_const["mode"] is "EXP":
+        elif self.model_const["mode"] == "EXP":
             self.m = self.model_const["m"]
             self.beta = self.model_const["beta"]
             self.n = self.model_const["n"]
-        elif self.model_const["mode"] is "PROP":
+        elif self.model_const["mode"] == "PROP":
             self.alpha = self.model_const["alpha"]
             self.n = self.model_const["n"]
         else:
@@ -119,9 +119,9 @@ class Cal_excond:
             relative error of cmaber pressure between assumed and calculated value
         """
         Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
-        if self.model_const["mode"] is "C1C2":
+        if self.model_const["mode"] == "C1C2":
             Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=self.n)
-        elif self.model_const["mode"] is "EXP":
+        elif self.model_const["mode"] == "EXP":
             # Vf = func_Vf_exp(Vox, Pc, self.beta, self.m, n=self.n)
             pass
         else:
@@ -171,9 +171,9 @@ class Cal_excond:
                 Pc = np.nan
 
         Vox = func_Vox(Pc, mox, self.Rm, self.Tox, self.Df, self.a)
-        if self.model_const["mode"] is "C1C2":
+        if self.model_const["mode"] == "C1C2":
             Vf = func_Vf(Vox, Pc, self.C1, self.C2, n=self.n)
-        elif self.model_const["mode"] is "EXP":
+        elif self.model_const["mode"] == "EXP":
             # Vf = func_Vf_exp(Vox, Pc, self.beta, self.m, n=self.n)
             pass
         else:
