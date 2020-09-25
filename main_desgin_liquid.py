@@ -237,6 +237,7 @@ class Cal_excond:
         error = diff/Pc
         return error
 
+
     def get_excond_liquid(self, Pup, Dt, Pc_init=0.1e+6):
         """function for calculate combustion parameter from assigned experimental condition
         
