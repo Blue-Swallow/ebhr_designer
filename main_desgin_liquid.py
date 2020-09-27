@@ -4,16 +4,18 @@ Created on Sat Aug  4 07:22:22 2018
 
 @author: TJ
 """
-
+# %%
 import numpy as np
 import pandas as pd
 import os
 import json
+import warnings
 from datetime import datetime
 from tqdm import tqdm
 from scipy import optimize
 from cea_post import Read_datset
 
+# %%
 class Cal_excond:
     """ Class for calculate combustion parameter to determin experimental condition
     
@@ -105,7 +107,7 @@ class Cal_excond:
             self.C11 = self.model_const["C11"]
             self.C12 = self.model_const["C12"]
             self.C21 = self.model_const["C21"]
-            self.C22 = self.model_const["C11"]
+            self.C22 = self.model_const["C22"]
             self.m1 = self.model_const["m1"]
             self.m2 = self.model_const["m2"]
             self.n = self.model_const["n"]
@@ -143,7 +145,7 @@ class Cal_excond:
         func_cstr = gen_func_cstr(self.cea_path)
         Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
-        error = diff/Pc_cal
+        error = diff/Pc
         return error
 
     def get_excond(self, mox, Dt, Pc_init=1.0e+6):
@@ -209,7 +211,7 @@ class Cal_excond:
                       }
         return dic_excond
 
-    def _iterat_func_Pc_liquid_(self, Pc, Pup, Dt):
+    def _iterat_func_Pc_liquid_(self, Pc, mox, Dt):
         """ function which output error of Pc for Pc iteration
         
         Parameters
@@ -226,19 +228,18 @@ class Cal_excond:
         error: float
             relative error of cmaber pressure between assumed and calculated value
         """
-        mox = func_mox_liquid(Pup, Pc, self.C, self.be, self.d_o, self.rho_ox)
+        # mox = func_mox_liquid(Pup, Pc, self.C, self.be, self.d_o, self.rho_ox)
         Vox = func_Vox_liquid(mox, self.rho_ox, self.Df, self.a)
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         func_cstr = gen_func_cstr(self.cea_path)
         Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
-        # error = diff/Pc_cal
         error = diff/Pc
         return error
 
 
-    def get_excond_liquid(self, Pup, Dt, Pc_init=0.1e+6):
+    def get_excond_liquid(self, mox, Dt, Pc_init=0.2e+6):
         """function for calculate combustion parameter from assigned experimental condition
         
         Parameters
@@ -266,35 +267,32 @@ class Cal_excond:
             "ustr_turb": float, [m/s] friction velocity when the flow is turbulence
         """
         func_cstr = gen_func_cstr(self.cea_path)
+        warnings.filterwarnings("error")
         try:
-            # Pc = optimize.newton(self._iterat_func_Pc_liquid_, Pc_init, maxiter=100, tol=1.0e-3, args=(Pup, Dt))
-            Pc = optimize.newton(self._iterat_func_Pc_liquid_, Pup*0.99, maxiter=100, tol=1.0e-3, args=(Pup, Dt))
-        except (RuntimeError, RuntimeWarning):
-            # Pc = optimize.brentq(self._iterat_func_Pc_liquid_, 0.1e+6, Pup*0.99 , maxiter=100, xtol=1.0e-3, args=(Pup, Dt), full_output=False)
+            Pc = optimize.newton(self._iterat_func_Pc_liquid_, Pc_init, maxiter=50, tol=1.0e-3, args=(mox, Dt))
+            if Pc <0.2e+6:
+                raise ValueError
+        except (RuntimeError, RuntimeWarning, ValueError):
             try:
-                Pc = optimize.brentq(self._iterat_func_Pc_liquid_, 0.1e+6, Pup*0.99 , maxiter=100, xtol=1.0e-3, args=(Pup, Dt), full_output=False)
+                Pc = optimize.brentq(self._iterat_func_Pc_liquid_, 0.2e+6, 50.0e+6 , maxiter=100, xtol=1.0e-3, args=(mox, Dt), full_output=False)
             except (RuntimeError, ValueError, RuntimeWarning):
                 Pc = np.nan
-        mox = func_mox_liquid(Pup, Pc, self.C, self.be, self.d_o, self.rho_ox)
         Vox = func_Vox_liquid(mox, self.rho_ox, self.Df, self.a)
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         func_cstr = gen_func_cstr(self.cea_path)
         cstr = self.eta* func_cstr(of, Pc)
         Re = self.rho_ox*Vox*self.d/self.mu
-        # ustr_lam = func_ustr_lam(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
-        # ustr_turb = func_ustr_turb(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
+        Pup = func_Pup_liquid(mox, Pc, self.C, self.be, self.d_o, self.rho_ox)
         dic_excond = {"mox": mox,
                       "Dt": Dt,
                       "Pc": Pc,
+                      "Pup": Pup,
                       "Vox": Vox,
                       "Vf": Vf,
                       "of": of,
                       "cstr_ex": cstr,
                       "Re": Re,
-                      "mox": mox
-                    #   "ustr_lam": ustr_lam,
-                    #   "ustr_turb": ustr_turb
                       }
         return dic_excond
     
@@ -317,16 +315,16 @@ class Gen_excond_table(Cal_excond):
         Dt_range: 1d-ndarray of float
             [m] the range of nozzle throat diameter
         """
-        if self.cond["mode_liquid"]:
-            print("\n\nInput the range of Pup [MPa], orifice up pressure, where you want to generate the table." )
-            print("\ne.g. If the range is 1.0 to 5.0 MPa and the interval is 0.1 MPa\n1.0 5.0 0.1")
-            tmp = list(map(lambda x: float(x) ,input().split()))
-            row_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e+6 # generate range and convert [MPa] to [Pa]
-        else:
-            print("\n\nInput the range of mox [g/s], oxidizer mass flow rate, where you want to generate the table." )
-            print("\ne.g. If the range is 10.0 to 20.0 g/s and the interval is 1.0 g/s\n10.0 20.0 1.0")
-            tmp = list(map(lambda x: float(x) ,input().split()))
-            row_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e-3 # generate range and convert [g/s] to [kg/s]
+        # if self.cond["mode_liquid"]:
+        #     print("\n\nInput the range of Pup [MPa], orifice up pressure, where you want to generate the table." )
+        #     print("\ne.g. If the range is 1.0 to 5.0 MPa and the interval is 0.1 MPa\n1.0 5.0 0.1")
+        #     tmp = list(map(lambda x: float(x) ,input().split()))
+        #     row_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e+6 # generate range and convert [MPa] to [Pa]
+        # else:
+        print("\n\nInput the range of mox [g/s], oxidizer mass flow rate, where you want to generate the table." )
+        print("\ne.g. If the range is 10.0 to 20.0 g/s and the interval is 1.0 g/s\n10.0 20.0 1.0")
+        tmp = list(map(lambda x: float(x) ,input().split()))
+        row_range = np.arange(tmp[0], tmp[1]+tmp[2]/2, tmp[2])*1.0e-3 # generate range and convert [g/s] to [kg/s]
 
         print("\n\nInput the range of Dt [mm], nozzle throat diameter, where you want to generate the table." )
         print("\ne.g. If the range is 5.0 to 10.0 mm and the interval is 1.0 mm\n5.0 10.0 1.0")
@@ -363,7 +361,7 @@ class Gen_excond_table(Cal_excond):
         df_re = df_base.copy(deep=True)
         df_ulam = df_base.copy(deep=True)
         df_uturb = df_base.copy(deep=True)
-        df_mox = df_base.copy(deep=True)
+        df_Pup = df_base.copy(deep=True)
         for Dt in tqdm(self.Dt_range, desc="Dt loop", leave=True):
             Pc = np.array([])
             Vox = np.array([])
@@ -373,10 +371,10 @@ class Gen_excond_table(Cal_excond):
             Re = np.array([])
             ustr_lam = np.array([])
             ustr_turb = np.array([])
-            mox = np.array([])
+            Pup = np.array([])
             for row_val in tqdm(self.row_range, desc="mox or Pup loop", leave=False):
                 if self.cond["mode_liquid"]:
-                    tmp = self.get_excond_liquid(row_val, Dt, Pc_init=0.1e+6)
+                    tmp = self.get_excond_liquid(row_val, Dt, Pc_init=0.2e+6)
                 else:
                     tmp = self.get_excond(row_val, Dt, Pc_init=0.1e+6)
                 Pc = np.append(Pc, tmp["Pc"])
@@ -388,11 +386,11 @@ class Gen_excond_table(Cal_excond):
                 if self.cond["mode_liquid"]:
                     ustr_lam = np.append(ustr_lam, np.nan)
                     ustr_turb = np.append(ustr_turb, np.nan)
-                    mox = np.append(mox, tmp["mox"])
+                    Pup = np.append(Pup, tmp["Pup"])
                 else:
                     ustr_lam = np.append(ustr_lam, tmp["ustr_lam"])
                     ustr_turb = np.append(ustr_turb, tmp["ustr_turb"])
-                    mox = np.append(mox, row_val)
+                    Pup = np.append(Pup, np.nan)
             df_pc[Dt] = Pc # insert calculated Pc to data frame, df.
             df_vox[Dt] = Vox # insert calculated Vox to data frame, df.
             df_vf[Dt] = Vf # insert calculated Vf to data frame, df.
@@ -401,14 +399,14 @@ class Gen_excond_table(Cal_excond):
             df_re[Dt] = Re # insert calculated Re to data frame, df.
             df_ulam[Dt] = ustr_lam # insert calculated ustr_lam to data frame, df.
             df_uturb[Dt] = ustr_turb # insert calculated ustr_turb to data frame, df.
-            df_mox[Dt] = mox
+            df_Pup[Dt] = Pup
         self.excond_table = {"Pc": df_pc,
                         "Vox": df_vox,
                         "Vf": df_vf,
                         "of": df_of,
                         "cstr_ex": df_cstr,
                         "Re": df_re,
-                        "mox": df_mox,
+                        "Pup": df_Pup,
                         "ustr_lam": df_ulam,
                         "ustr_turb": df_uturb
                         }
@@ -433,11 +431,11 @@ class Gen_excond_table(Cal_excond):
         for param, table in self.excond_table.items():
             table.to_csv(os.path.join(fldname, param+".csv"), na_rep="NaN")
 
-
-def func_mox_liquid(Pup, Pc, C, beta, do, rho_ox):
+# %%
+def func_Pup_liquid(mox, Pc, C, beta, do, rho_ox):
     A = np.power(do, 2)*np.pi/4
-    mox = C*A/np.sqrt(1-np.power(beta, 4)) *np.sqrt(2*rho_ox*(Pup-Pc))
-    return mox
+    Pup = Pc + np.power(mox*np.sqrt(1-np.power(beta, 4))/(C*A), 2)/(2*rho_ox)
+    return Pup
 
 def func_Vox(Pc, mox, Rm, Tox, Df, a):
     Af = np.pi*np.power(Df, 2)/4
@@ -499,8 +497,9 @@ def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
     Pc_cal = eta*cstr*mox*(1 + 1/of)/At
     return(Pc_cal)
    
-
+# %%
 if __name__ == "__main__":
+# %%
     CALCOND = {"d": 0.5e-3,      # [m] port diameter
                "N": 132,        # [-] the number of port
                "Df": 40.7e-3,     # [m] fuel outer diameter
@@ -539,21 +538,21 @@ if __name__ == "__main__":
                 "m2": 0.426
                 }
 
+# %%
     # inst = Cal_excond(CALCOND, CONST_VF)
     # out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
     # print(out)
 
-    # MOX_RANGE = np.arange(2.0e-3, 8.1e-3, 0.1e-3)
-    # DT_RANGE = np.arange(5.5e-3, 6.6e-3, 0.1e-3)
-    # inst = Gen_excond_table(CALCOND, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
+    MOX_RANGE = np.arange(5.0, 50.0, 1.0)*1e-3
+    DT_RANGE = np.arange(4.0, 6.0, 0.5)*1e-3
+    inst = Gen_excond_table(CALCOND, CONST_VF, row_range=MOX_RANGE, Dt_range=DT_RANGE)
 
-    PUP_RANGE = np.arange(1.5, 10.1, 0.1)*1e+6
-    DT_RANGE = np.arange(0.5, 4.1, 0.25)*1e-3
-    inst = Gen_excond_table(CALCOND, CONST_VF, row_range=PUP_RANGE, Dt_range=DT_RANGE)
-
-
+# %%
     # inst = Gen_excond_table(CALCOND, CONST_VF)
 
     out = inst.gen_table()
     inst.output()
     print("Suceeded!")
+
+
+#%%
