@@ -4,7 +4,7 @@ Created on Sat Aug  4 07:22:22 2018
 
 @author: TJ
 """
-
+# %%
 import numpy as np
 import pandas as pd
 import os
@@ -131,7 +131,7 @@ class Cal_excond:
         func_cstr = gen_func_cstr(self.cea_path)
         Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
-        error = diff/Pc_cal
+        error = diff/Pc
         return error
 
     def get_excond(self, mox, Dt, Pc_init=1.0e+6):
@@ -313,7 +313,7 @@ class Gen_excond_table(Cal_excond):
         for param, table in self.excond_table.items():
             table.to_csv(os.path.join(fldname, param+".csv"), na_rep="NaN")
 
-
+# %%
 def func_Vox(Pc, mox, Rm, Tox, Df, a):
     Af = np.pi*np.power(Df, 2)/4
     Vox = mox*Rm*Tox/(Pc*Af*(1-a)) #[m/s]
@@ -358,8 +358,9 @@ def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
     Pc_cal = eta*cstr*mox*(1 + 1/of)/At
     return(Pc_cal)
    
-
+# %%
 if __name__ == "__main__":
+# %%
     CALCOND = {"d": 0.272e-3,      # [m] port diameter
                "N": 433,        # [-] the number of port
                "Df": 38e-3,     # [m] fuel outer diameter
@@ -383,7 +384,7 @@ if __name__ == "__main__":
                 "m": None,          # [-] optional. exponent of oxidizer port velocity
                 "alpha": None       # SI-unit, optional. experimental constant
                 }
-
+# %%
     # inst = Cal_excond(CALCOND, CONST_VF)
     # out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
     # print(out)
@@ -392,6 +393,8 @@ if __name__ == "__main__":
     # DT_RANGE = np.arange(5.5e-3, 6.6e-3, 0.1e-3)
     # inst = Gen_excond_table(CALCOND, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
     inst = Gen_excond_table(CALCOND, CONST_VF)
+
+# %%
     out = inst.gen_table()
     inst.output()
     print("Suceeded!")
