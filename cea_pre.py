@@ -10,9 +10,6 @@ from tqdm import tqdm
 
 cond_name = "cond.txt"
 
-
-
-
 class Cui_input():
     """
     Class to attract information through CUI to generate .inp file
@@ -365,7 +362,8 @@ class Cui_input():
             of: list, [start, end, interval], each element type is float  \n
             
         """
-        path = os.path.join(self._getpath_(), "inp")
+        fld_path = self._getpath_()
+        path = os.path.join(fld_path, "inp")
 #        oxid,fuel,dh,Pc,of,n,elem  = read_cond(path)
         of = np.arange(self.of[0], self.of[1], self.of[2])
         Pc = np.arange(self.Pc[0], self.Pc[1], self.Pc[2])
@@ -379,11 +377,11 @@ class Cui_input():
             for j in range(np.size(of)):
 #                make_inp(path, self.option, of[j], Pc[i], oxid, fuel, self.f_enthlpy, elem_input, self.eps)
                 make_inp(path, self.option, of[j], Pc[i], self.list_oxid, self.list_fuel, self.eps)
-        return(path)
+        return(fld_path)
 
 
 
-def make_inp(path, option, of, Pc, list_oxid, list_fuel, eps, n=""):
+def make_inp(path, option, of, Pc, list_oxid, list_fuel, eps, fname=False):
     """
     Write information in input file, "*.inp".
     
@@ -424,7 +422,10 @@ def make_inp(path, option, of, Pc, list_oxid, list_fuel, eps, n=""):
         os.makedirs(path)
     num_round = int(2) #the number of decimal places in "Pc" & "of"
 #    inp_fname = "Pc_{:0^5}__of_{:0^5}.inp".format(round(Pc,num_round), round(of,num_round)) #.inp file name, e.g. "Pc=1.00_of=6.00.inp"
-    inp_fname = "Pc_{:0>5.2f}__of_{:0>5.2f}.inp".format(round(Pc,num_round), round(of,num_round)) #.inp file name, e.g. "Pc=1.00_of=6.00.inp"
+    if fname:
+        inp_fname = fname + ".inp"
+    else:
+        inp_fname = "Pc_{:0>5.2f}__of_{:0>5.2f}.inp".format(round(Pc,num_round), round(of,num_round)) #.inp file name, e.g. "Pc=1.00_of=6.00.inp"
     file = open(os.path.join(path,inp_fname), "w")
 
     Pc = Pc * 10    #Pc:Chamber pressure [bar]
@@ -447,6 +448,54 @@ def make_inp(path, option, of, Pc, list_oxid, list_fuel, eps, n=""):
     file.write("prob\n\t{}\nreact\n{}{}output\t{}\nend\n".format(prob,oxid,fuel,outp))
     file.close()
 
+
+def make_inp_name(path, option, list_species, Pc, eps, fname=False):
+    """
+    Write information in input file, "*.inp".
+    This mode should be used when exe program uses non-oxidize and non-fuel spieces.
+    
+    Parameter
+    ---------
+    path : string
+        Path at which "*.inp" file is saved
+    option: string
+        Calculation option, wtheher using equilibrium composition or frozen composition.
+    list_species: list of dictionary,
+        The list has an information about chemical species as dict type; dict{"name":name, "wt":weight fraction, "temp":initial temperature, "h":enthalpy, "elem"element}
+    Pc: float,
+        Camberpressure, [MPa]
+    eps: float,
+        Area ratio of nozzle throat & exit, Ae/At
+    n: int
+        polimerization number
+    """
+
+    if os.path.exists(path):
+        pass
+    else:
+        os.makedirs(path)
+    num_round = int(2) #the number of decimal places in "Pc" & "of"
+    if fname:
+        inp_fname = fname + ".inp"
+    else:
+        inp_fname = "Pc={:0>5.2f}_".format(round(Pc,num_round))
+        for dic in list_species:
+            inp_fname = inp_fname + "{}={:0>5.1f}".format(dic["name"], round(dic["wt"],num_round))   
+        inp_fname = inp_fname + ".inp"
+    file = open(os.path.join(path,inp_fname), "w")
+
+    Pc = Pc * 10    #Pc:Chamber pressure [bar]
+    prob = "case={} rocket {} tcest,k=3800 p,bar={} sup,ae/at={}".format(inp_fname, option, round(Pc,4), round(eps,4))
+    name = ""
+    for i in range(len(list_species)):
+        if len(str(list_species[i]["h"]))==0:
+            name = name + "\tname={} wt={} t,k={} \n".format(list_species[i]["name"], list_species[i]["wt"], list_species[i]["temp"])
+        else:
+            name = name + "\tname={} wt={} t,k={} h,kj/mol={} {} \n".format(list_species[i]["name"], list_species[i]["wt"], list_species[i]["temp"], list_species[i]["h"], list_species[i]["elem"])
+#    outp = "siunits short"
+    outp = "transport"
+    file.write("prob\n\t{}\nreact\n{}output\t{}\nend\n".format(prob,name,outp))
+    file.close()
 
 
 if __name__ == "__main__":
