@@ -149,7 +149,11 @@ class Cal_excond:
             pass
         of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
         func_cstr = gen_func_cstr(self.cea)
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
+        if self.cea["mode_n2"]:
+            wt_n2 = self.cea["massfrac_n2"]
+        else:
+            wt_n2 = 0.0
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, wt_n2)
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -238,7 +242,11 @@ class Cal_excond:
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         func_cstr = gen_func_cstr(self.cea)
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
+        if self.cea["mode_n2"]:
+            wt_n2 = self.cea["massfrac_n2"]
+        else:
+            wt_n2 = 0.0
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, wt_n2)
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -510,7 +518,7 @@ def gen_func_cstr(param_cea):
 def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta, wt_n2):
     cstr = func_cstr(of,Pc)
     At = np.pi*np.power(Dt, 2)/4
-    Pc_cal = eta*cstr*mox*(1 + 1/of)/At
+    Pc_cal = eta*cstr*mox*(1 + 1/of + (1+1/of)*wt_n2/(1.0-wt_n2))/At
     return(Pc_cal)
    
 # %%
@@ -533,9 +541,9 @@ if __name__ == "__main__":
                     "rho_ox": 1190   # [kg/m3] density of liquid oxidizer
                     }
 
-    PARAM_CEA = {"cea_path": os.path.join("cea_db", "LOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
-                #  "cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
-                 "mode_n2": True,               # mode selection; using Gasous N2 for pressurization or not.
+    PARAM_CEA = {"cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
+                #  "cea_path": os.path.join("cea_db", "LOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
+                 "mode_n2": False,               # mode selection; using Gasous N2 for pressurization or not.
                                                 # If True, this code execute CEA as a single execute mode using following data,
                                                 # If False, this code execute CEA using the .csv data base assigned at the above key: "cea_db".
                  "massfrac_n2": 0.1,            # mass fraction of Gaseous N2 to fuel and oxidizer mass flow rate
@@ -577,7 +585,7 @@ if __name__ == "__main__":
     # out = inst.get_excond(mox=15.0e-3, Dt=7.0e-3, Pc_init=0.3e+6)
     # print(out)
 
-    MOX_RANGE = np.arange(5.0, 50.0, 1.0)*1e-3
+    MOX_RANGE = np.arange(10.0, 30.0, 1.0)*1e-3
     DT_RANGE = np.arange(4.0, 6.0, 0.5)*1e-3
     inst = Gen_excond_table(PARAM_EX, PARAM_LIQUID, PARAM_CEA, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
 
