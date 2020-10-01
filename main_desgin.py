@@ -159,7 +159,7 @@ class Cal_excond:
         error = diff/Pc
         return error
 
-    def get_excond(self, mox, Dt, Pc_init=1.0e+6):
+    def get_excond(self, mox, Dt, Pc_init=0.2e+6):
         """function for calculate combustion parameter from assigned experimental condition
         
         Parameters
@@ -187,11 +187,14 @@ class Cal_excond:
             "ustr_turb": float, [m/s] friction velocity when the flow is turbulence
         """
         func_cstr = gen_func_cstr(self.cea)
+        warnings.filterwarnings("error")
         try:
-            Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=10, tol=1.0e-3, args=(mox, Dt))
-        except (RuntimeError, RuntimeWarning):
+            Pc = optimize.newton(self._iterat_func_Pc_, Pc_init, maxiter=50, tol=1.0e-3, args=(mox, Dt))
+            if Pc <0.2e+6:
+                raise ValueError
+        except (RuntimeError, RuntimeWarning, ValueError):
             try:
-                Pc = optimize.brentq(self._iterat_func_Pc_, 0.01e+6, 50e+6, maxiter=100, xtol=1.0e-3, args=(mox, Dt), full_output=False)
+                Pc = optimize.brentq(self._iterat_func_Pc_, 0.2e+6, 50e+6, maxiter=100, xtol=1.0e-3, args=(mox, Dt), full_output=False)
             except (RuntimeError, ValueError, RuntimeWarning):
                 Pc = np.nan
 
@@ -384,7 +387,7 @@ class Gen_excond_table(Cal_excond):
                 if self.liquid["mode_liquid"]:
                     tmp = self.get_excond_liquid(mox_val, Dt, Pc_init=0.2e+6)
                 else:
-                    tmp = self.get_excond(mox_val, Dt, Pc_init=0.1e+6)
+                    tmp = self.get_excond(mox_val, Dt, Pc_init=0.2e+6)
                 Pc = np.append(Pc, tmp["Pc"])
                 Vox = np.append(Vox, tmp["Vox"])
                 Vf = np.append(Vf, tmp["Vf"])
@@ -560,7 +563,7 @@ def read_cond():
 # %%
 if __name__ == "__main__":
 # %%
-## following part is for the debugging mode
+    ## following part is for the debugging mode
     # PARAM_EX = {"d": 0.5e-3,     # [m] port diameter
     #             "N": 132,        # [-] the number of port
     #             "Df": 40.7e-3,   # [m] fuel outer diameter
@@ -616,22 +619,22 @@ if __name__ == "__main__":
     #             "C22": -0.905e-9,   # SI-unit, optional. experimental constant
     #             "m2": 0.426         # [-] optional. exponent of port diameter
     #             }
-## The above section is for debugging mode
+    ## The above section is for debugging mode
 # %%
-## Read the condition file from assigned folder
+    ## Read the condition file from assigned folder
     FLDNAME, DIC_COND = read_cond()
     PARAM_EX = DIC_COND["PARAM_EX"]
     PARAM_LIQUID = DIC_COND["PARAM_LIQUID"]
     PARAM_CEA = DIC_COND["PARAM_CEA"]
     CONST_VF = DIC_COND["CONST_VF"]
 # %%
-    # MOX_RANGE = np.arange(10.0, 30.0, 1.0)*1e-3
-    # DT_RANGE = np.arange(4.0, 6.0, 0.5)*1e-3
+    # MOX_RANGE = np.arange(1.0, 30.0, 1.0)*1e-3
+    # DT_RANGE = np.arange(4.0, 6.5, 0.5)*1e-3
     # inst = Gen_excond_table(PARAM_EX, PARAM_LIQUID, PARAM_CEA, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
     inst = Gen_excond_table(PARAM_EX, PARAM_LIQUID, PARAM_CEA, CONST_VF)
 
 # %%
-## Output the calculated result as a csv data
+    ## Output the calculated result as a csv data
     out = inst.gen_table()
     inst.output(fldname=FLDNAME)
     print("Suceeded!")
