@@ -1,6 +1,8 @@
 # Original
 */*
 *.org
+*.inp
+*.out
 !sample/*
 !cea/*.exe
 !cea/thermo*

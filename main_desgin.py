@@ -513,7 +513,10 @@ def gen_func_cstr(param_cea):
                 {"name": "N2", "wt": wt_n2, "temp": 280, "h": "", "elem": ""}
                 ]
             res = obj.onetime_exe_name(param_cea["eq_option"], list_species, Pc, param_cea["eps"])
-            cstr = res["rock"]["CSTAR"][0]
+            if len(res["rock"]["CSTAR"]) == 0:
+                cstr = 0.0
+            else:
+                cstr = res["rock"]["CSTAR"][0]
             return cstr
     else: # generate cstr function which use .csv data base
         func = Read_datset(param_cea["cea_path"]).gen_func("CSTAR")
@@ -628,8 +631,8 @@ if __name__ == "__main__":
     PARAM_CEA = DIC_COND["PARAM_CEA"]
     CONST_VF = DIC_COND["CONST_VF"]
 # %%
-    # MOX_RANGE = np.arange(1.0, 30.0, 1.0)*1e-3
-    # DT_RANGE = np.arange(4.0, 6.5, 0.5)*1e-3
+    # MOX_RANGE = np.arange(20.0, 30.0, 1.0)*1e-3
+    # DT_RANGE = np.arange(5.5, 6.6, 0.5)*1e-3
     # inst = Gen_excond_table(PARAM_EX, PARAM_LIQUID, PARAM_CEA, CONST_VF, mox_range=MOX_RANGE, Dt_range=DT_RANGE)
     inst = Gen_excond_table(PARAM_EX, PARAM_LIQUID, PARAM_CEA, CONST_VF)
 
