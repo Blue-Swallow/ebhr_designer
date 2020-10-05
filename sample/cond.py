@@ -18,19 +18,9 @@ PARAM_LIQUID = {"mode_liquid": False, # mode selection; using liquid oxidizer or
                 "rho_ox": 1190   # [kg/m3] density of liquid oxidizer
                 }
 
-PARAM_CEA = {"cea_path": os.path.join("cea_db", "sample", "csv_database")   # relative folder path to CEA .csv data-base
-            #  "mode_n2": False,               # mode selection; using Gasous N2 for pressurization or not.
-            #                                  # If True, this code execute CEA as a single execute mode using following data,
-            #                                  # If False, this code execute CEA using the .csv data base assigned at the above key: "cea_db".
-            #  "massfrac_n2": 0.1,             # mass fraction of Gaseous N2 to fuel and oxidizer mass flow rate
-            #  "eq_option": "frozen nfz=2",    # (CEA input) equilibrium option for NASA-CEA
-            #  "eps": 1.0,                     # (CEA input) nozzle opening ratio
-            #  "name_oxid": "O2(L)",           # (CEA input) the name of oxidizer
-            #  "temp_oxid": 90,                # (CEA input) [K] the temperature of oxidizer
-            #  "name_fuel": "CurableResin",    # (CEA input) the name of fuel
-            #  "temp_fuel": 90,                # (CEA input) [K] the temperature of fuel
-            #  "enthalpy": -296.9636,          # (CEA input) [kJ/mol]
-            #  "element": "C 16.0873 H 20.6143 O 3.96810"     # (CEA input) the kind of element and its moleculer number
+PARAM_CEA = {"cea_path": os.path.join("cea_db", "sample", "csv_database"),   # relative folder path to CEA .csv data-base
+             "wt_other": 0.0        # [%] mass fraction of other chemical species, which are not oxidizer or fuel.
+                                    # you should assign the cea data base which consider the mixture of other chemical species if "wt_other" is not zero.
             }
 
 CONST_VF = {"mode": "C1C2",     # mode selectioin.

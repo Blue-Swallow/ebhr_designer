@@ -147,7 +147,7 @@ class Cal_excond:
             pass
         of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
         func_cstr = gen_func_cstr(self.cea)
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, self.cea["wt_other"])
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -201,6 +201,8 @@ class Cal_excond:
             # Vf = func_Vf_prop(Vox, Pc, self.alpha, n=self.n)
             pass
         of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
+        mf = mox/of
+        mot = func_mot(mox, of ,self.cea["wt_other"])
         cstr = self.eta* func_cstr(of, Pc)
         Re = func_Re(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
         ustr_lam = func_ustr_lam(Pc, Vox, self.Tox, self.Rm, self.d, self.mu)
@@ -211,6 +213,8 @@ class Cal_excond:
                       "Vox": Vox,
                       "Vf": Vf,
                       "of": of,
+                      "mf": mf,
+                      "mot": mot,
                       "cstr_ex": cstr,
                       "Re": Re,
                       "ustr_lam": ustr_lam,
@@ -239,7 +243,7 @@ class Cal_excond:
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         func_cstr = gen_func_cstr(self.cea)
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, self.cea["wt_other"])
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -286,6 +290,8 @@ class Cal_excond:
         Vox = func_Vox_liquid(mox, self.rho_ox, self.Df, self.a)
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
+        mf = mox/of
+        mot = func_mot(mox, of ,self.cea["wt_other"])
         func_cstr = gen_func_cstr(self.cea)
         cstr = self.eta* func_cstr(of, Pc)
         Re = self.rho_ox*Vox*self.d/self.mu
@@ -297,6 +303,8 @@ class Cal_excond:
                       "Vox": Vox,
                       "Vf": Vf,
                       "of": of,
+                      "mf": mf,
+                      "mot": mot,
                       "cstr_ex": cstr,
                       "Re": Re,
                       }
@@ -358,6 +366,7 @@ class Gen_excond_table(Cal_excond):
         df_vf = df_base.copy(deep=True)
         df_of = df_base.copy(deep=True)
         df_mf = df_base.copy(deep=True)
+        df_mot = df_base.copy(deep=True)
         df_cstr = df_base.copy(deep=True)
         df_re = df_base.copy(deep=True)
         df_ulam = df_base.copy(deep=True)
@@ -369,6 +378,7 @@ class Gen_excond_table(Cal_excond):
             Vf = np.array([])
             of = np.array([])
             mf = np.array([])
+            mot = np.array([])
             cstr_ex = np.array([])
             Re = np.array([])
             ustr_lam = np.array([])
@@ -383,7 +393,8 @@ class Gen_excond_table(Cal_excond):
                 Vox = np.append(Vox, tmp["Vox"])
                 Vf = np.append(Vf, tmp["Vf"])
                 of = np.append(of, tmp["of"])
-                mf = np.append(mf, mox_val/tmp["of"])
+                mf = np.append(mf, tmp["mf"])
+                mot = np.append(mot, tmp["mot"])
                 cstr_ex = np.append(cstr_ex, tmp["cstr_ex"])
                 Re = np.append(Re, tmp["Re"])
                 if self.liquid["mode_liquid"]:
@@ -399,6 +410,7 @@ class Gen_excond_table(Cal_excond):
             df_vf[Dt] = Vf # insert calculated Vf to data frame, df.
             df_of[Dt] = of # insert calculated of to data frame, df.
             df_mf[Dt] = mf # insert calculated mf to data frame, df.
+            df_mot[Dt] = mot # insert calculated mot to data frame, df.
             df_cstr[Dt] = cstr_ex # insert calculated cstr_ex to data frame, df.
             df_re[Dt] = Re # insert calculated Re to data frame, df.
             df_ulam[Dt] = ustr_lam # insert calculated ustr_lam to data frame, df.
@@ -409,6 +421,7 @@ class Gen_excond_table(Cal_excond):
                         "Vf": df_vf,
                         "of": df_of,
                         "mf": df_mf,
+                        "mot": df_mot,
                         "cstr_ex": df_cstr,
                         "Re": df_re,
                         "Pup": df_Pup,
@@ -474,6 +487,11 @@ def func_of_liquid(mox, Vf, rho_f, a, Df):
     of = mox/(a*Af*Vf*rho_f)
     return of
 
+def func_mot(mox, of, wt_other):
+    Yot = wt_other*1e-2     # change % to [-]
+    mot = mox*(1 + 1/of)*Yot/(1 - Yot)
+    return mot
+
 def func_Re(P, u, T, Rm, d, mu):
     rho = P/(Rm*T)
     Re = rho*u*d/mu
@@ -498,10 +516,12 @@ def gen_func_cstr(param_cea):
     func = Read_datset(param_cea["cea_path"]).gen_func("CSTAR")
     return(func)
 
-def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
+def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta, wt_other):
+    mot = func_mot(mox, of, wt_other)
+    mf = mox/of
     cstr = func_cstr(of,Pc)
     At = np.pi*np.power(Dt, 2)/4
-    Pc_cal = eta*cstr*mox*(1 + 1/of)/At
+    Pc_cal = eta*cstr*(mox + mf + mot)/At
     return(Pc_cal)
 
 
