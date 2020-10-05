@@ -95,10 +95,7 @@ class Cal_excond:
         self.d_o = liquid["d_o"]
         self.rho_ox = liquid["rho_ox"]
         self.a = 1 - self.N*np.power(self.d, 2)/np.power(self.Df, 2)
-        if cea["mode_n2"]:
-            self.cea_path = None
-        else:
-            self.cea_path = cea["cea_path"]
+        self.cea_path = cea["cea_path"]
         if self.model_const["mode"] == "C1C2":
             self.C1 = self.model_const["C1"]
             self.C2 = self.model_const["C2"]
@@ -150,11 +147,7 @@ class Cal_excond:
             pass
         of = func_of(Vox, Vf, self.rho_f, self.a, Pc, self.Rm, self.Tox)
         func_cstr = gen_func_cstr(self.cea)
-        if self.cea["mode_n2"]:
-            wt_n2 = self.cea["massfrac_n2"]
-        else:
-            wt_n2 = 0.0
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, wt_n2)
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -246,11 +239,7 @@ class Cal_excond:
         Vf = func_Vf_liquid(Vox, Pc, self.d, self.C11, self.C12, self.C21, self.C22, self.m1, self.m2, n=self.n)
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         func_cstr = gen_func_cstr(self.cea)
-        if self.cea["mode_n2"]:
-            wt_n2 = self.cea["massfrac_n2"]
-        else:
-            wt_n2 = 0.0
-        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta, wt_n2)
+        Pc_cal = func_Pc_cal(of, Pc, mox, func_cstr, Dt, self.eta)
         diff = Pc_cal - Pc
         error = diff/Pc
         return error
@@ -368,6 +357,7 @@ class Gen_excond_table(Cal_excond):
         df_vox = df_base.copy(deep=True)
         df_vf = df_base.copy(deep=True)
         df_of = df_base.copy(deep=True)
+        df_mf = df_base.copy(deep=True)
         df_cstr = df_base.copy(deep=True)
         df_re = df_base.copy(deep=True)
         df_ulam = df_base.copy(deep=True)
@@ -378,12 +368,13 @@ class Gen_excond_table(Cal_excond):
             Vox = np.array([])
             Vf = np.array([])
             of = np.array([])
+            mf = np.array([])
             cstr_ex = np.array([])
             Re = np.array([])
             ustr_lam = np.array([])
             ustr_turb = np.array([])
             Pup = np.array([])
-            for mox_val in tqdm(self.mox_range, desc="mox or Pup loop", leave=False):
+            for mox_val in tqdm(self.mox_range, desc="mox loop", leave=False):
                 if self.liquid["mode_liquid"]:
                     tmp = self.get_excond_liquid(mox_val, Dt, Pc_init=0.2e+6)
                 else:
@@ -392,6 +383,7 @@ class Gen_excond_table(Cal_excond):
                 Vox = np.append(Vox, tmp["Vox"])
                 Vf = np.append(Vf, tmp["Vf"])
                 of = np.append(of, tmp["of"])
+                mf = np.append(mf, mox_val/tmp["of"])
                 cstr_ex = np.append(cstr_ex, tmp["cstr_ex"])
                 Re = np.append(Re, tmp["Re"])
                 if self.liquid["mode_liquid"]:
@@ -406,6 +398,7 @@ class Gen_excond_table(Cal_excond):
             df_vox[Dt] = Vox # insert calculated Vox to data frame, df.
             df_vf[Dt] = Vf # insert calculated Vf to data frame, df.
             df_of[Dt] = of # insert calculated of to data frame, df.
+            df_mf[Dt] = mf # insert calculated mf to data frame, df.
             df_cstr[Dt] = cstr_ex # insert calculated cstr_ex to data frame, df.
             df_re[Dt] = Re # insert calculated Re to data frame, df.
             df_ulam[Dt] = ustr_lam # insert calculated ustr_lam to data frame, df.
@@ -415,6 +408,7 @@ class Gen_excond_table(Cal_excond):
                         "Vox": df_vox,
                         "Vf": df_vf,
                         "of": df_of,
+                        "mf": df_mf,
                         "cstr_ex": df_cstr,
                         "Re": df_re,
                         "Pup": df_Pup,
@@ -501,31 +495,13 @@ def func_ustr_turb(P, u, T, Rm, d, mu):
     return ustr
 
 def gen_func_cstr(param_cea):
-    if param_cea["mode_n2"]: # generate cstr function which use one-time CEA execution
-        obj = cexe()
-        def func(of, Pc):
-            wt_n2 = param_cea["massfrac_n2"]*100
-            wt_oxid = np.power((1+1/of), -1) *(100-wt_n2)
-            wt_fuel = np.power((1+of), -1) *(100-wt_n2)
-            list_species = [
-                {"name": param_cea["name_oxid"], "wt": wt_oxid, "temp": param_cea["temp_oxid"], "h": "", "elem": ""},
-                {"name": param_cea["name_fuel"], "wt": wt_fuel, "temp": param_cea["temp_fuel"], "h": param_cea["enthalpy"], "elem": param_cea["element"]},
-                {"name": "N2", "wt": wt_n2, "temp": 280, "h": "", "elem": ""}
-                ]
-            res = obj.onetime_exe_name(param_cea["eq_option"], list_species, Pc, param_cea["eps"])
-            if len(res["rock"]["CSTAR"]) == 0:
-                cstr = 0.0
-            else:
-                cstr = res["rock"]["CSTAR"][0]
-            return cstr
-    else: # generate cstr function which use .csv data base
-        func = Read_datset(param_cea["cea_path"]).gen_func("CSTAR")
+    func = Read_datset(param_cea["cea_path"]).gen_func("CSTAR")
     return(func)
 
-def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta, wt_n2):
+def func_Pc_cal(of, Pc, mox, func_cstr, Dt, eta):
     cstr = func_cstr(of,Pc)
     At = np.pi*np.power(Dt, 2)/4
-    Pc_cal = eta*cstr*mox*(1 + 1/of + (1+1/of)*wt_n2/(1.0-wt_n2))/At
+    Pc_cal = eta*cstr*mox*(1 + 1/of)/At
     return(Pc_cal)
 
 
@@ -584,20 +560,8 @@ if __name__ == "__main__":
     #                 "rho_ox": 1190   # [kg/m3] density of liquid oxidizer
     #                 }
 
-    # PARAM_CEA = {"cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
-    #             #  "cea_path": os.path.join("cea_db", "LOX_CurableResin", "csv_database"),   # relative folder path to CEA .csv data-base
-    #              "mode_n2": False,               # mode selection; using Gasous N2 for pressurization or not.
-    #                                             # If True, this code execute CEA as a single execute mode using following data,
-    #                                             # If False, this code execute CEA using the .csv data base assigned at the above key: "cea_db".
-    #              "massfrac_n2": 0.1,            # mass fraction of Gaseous N2 to fuel and oxidizer mass flow rate
-    #              "eq_option": "frozen nfz=2",   # (CEA input) equilibrium option for NASA-CEA
-    #              "eps": 1.0,                    # (CEA input) nozzle opening ratio
-    #              "name_oxid": "O2(L)",          # (CEA input) the name of oxidizer
-    #              "temp_oxid": 90,               # (CEA input) [K] the temperature of oxidizer
-    #              "name_fuel": "CurableResin",   # (CEA input) the name of fuel
-    #              "temp_fuel": 90,               # (CEA input) [K] the temperature of fuel
-    #              "enthalpy": -296.9636,         # (CEA input) [kJ/mol]
-    #              "element": "C 16.0873 H 20.6143 O 3.96810"     # (CEA input) the kind of element and its moleculer number
+    # PARAM_CEA = {"cea_path": os.path.join("cea_db", "GOX_CurableResin", "csv_database")   # relative folder path to CEA .csv data-base
+    #             #  "cea_path": os.path.join("cea_db", "LOX_CurableResin", "csv_database")   # relative folder path to CEA .csv data-base
     #             }
               
 
