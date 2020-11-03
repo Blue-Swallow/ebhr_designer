@@ -280,6 +280,7 @@ class Cal_excond:
         warnings.filterwarnings("error")
         try:
             Pc = optimize.newton(self._iterat_func_Pc_liquid_, Pc_init, maxiter=50, tol=1.0e-3, args=(mox, Dt))
+            
             if Pc <0.2e+6:
                 raise ValueError
         except (RuntimeError, RuntimeWarning, ValueError):
@@ -292,7 +293,7 @@ class Cal_excond:
         of = func_of_liquid(mox, Vf, self.rho_f, self.a, self.Df)
         mf = mox/of
         mot = func_mot(mox, of ,self.cea["wt_other"])
-        func_cstr = gen_func_cstr(self.cea)
+        # func_cstr = gen_func_cstr(self.cea)
         cstr = self.eta* func_cstr(of, Pc)
         Re = self.rho_ox*Vox*self.d/self.mu
         Pup = func_Pup_liquid(mox, Pc, self.C, self.be, self.d_o, self.rho_ox)
